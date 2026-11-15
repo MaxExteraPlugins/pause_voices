@@ -18,7 +18,7 @@ __description__ = "[EN]: Tapping the (X) on a voice or video message (video note
 __author__      = "@itNotMax - @MaxExteraPlugins"
 __version__ = "1.0.0"
 __icon__        = "MaxExteraPluginsStickers/29"
-__min_version__ = "12.1.1"
+__min_version__ = "12.10.6"
 __app_version__ = ">=12.1.1"
 __sdk_version__ = ">=1.4.3.3"
 
@@ -125,6 +125,10 @@ class Dex:
         return zlib.decompress(base64.b64decode(p))
 
 
+
+# ============================================================
+# MaxExteraPlugins Shared Author & Channel Subscription Module
+# ============================================================
 
 # ============================================================
 # MaxExteraPlugins Shared Author & Channel Subscription Module
@@ -381,6 +385,11 @@ class AuthorChannelHelper:
 
     def prepend_settings(self, original_items=None) -> list:
         from ui.settings import Header, Text, Divider
+
+        # Prevent double-prepending
+        if original_items and any(getattr(x, "text", "") == "MaxExteraPlugins" for x in original_items if type(x).__name__ == "Header"):
+            return original_items
+
         links = self._get_links()
         buttons_config = links.get("buttons")
 
@@ -427,8 +436,27 @@ class AuthorChannelHelper:
             res.extend(author_items)
             res.append(Divider())
 
+        # Clean original_items by removing any old "Информация" / "Information" category
+        cleaned_items = []
         if original_items:
-            res.extend(original_items)
+            skipping_info = False
+            for item in original_items:
+                item_cls = type(item).__name__
+                if item_cls == "Header":
+                    txt = str(getattr(item, "text", "") or getattr(item, "title", "") or "").lower()
+                    if "информ" in txt or "inform" in txt:
+                        skipping_info = True
+                        continue
+                    else:
+                        skipping_info = False
+                elif skipping_info and item_cls == "Divider":
+                    skipping_info = False
+                    continue
+
+                if not skipping_info:
+                    cleaned_items.append(item)
+
+        res.extend(cleaned_items)
         return res
 
     def _dismiss_active_dialog(self):
@@ -790,6 +818,15 @@ class SendPausePlugin(BasePlugin):
         return ApplicationLoader.applicationContext.getSharedPreferences(PREFS_NAME, 0)
 
     def create_settings(self):
+        try:
+            items = self._inner_create_settings()
+        except Exception:
+            items = []
+        if hasattr(self, '_author_helper'):
+            return self._author_helper.prepend_settings(items)
+        return items
+
+    def _inner_create_settings(self):
         items = [
             Header(text="Настройки"),
         ]
