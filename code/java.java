@@ -46,60 +46,65 @@ public class Main {
 // lifecycle (called from Python)
 // ============================================================
 
-    private static void showPauseDialogJava(final long id, final boolean inDelay, final int account) {
+    private static Object findMo(long id) {
+        for (int a = 0; a < 4; a++) {
+            Object smh = getSmh(a);
+            if (smh == null) continue;
+            try {
+                Field f = findField(smh.getClass(), "delayedMessages");
+                if (f != null) {
+                    Object map = f.get(smh);
+                    if (map instanceof Map) {
+                        for (Object e0 : ((Map<?, ?>) map).entrySet()) {
+                            Object v = ((Map.Entry<?, ?>) e0).getValue();
+                            if (v instanceof ArrayList) {
+                                for (Object cand : (ArrayList<?>) v) {
+                                    Object obj = gf(cand, "obj");
+                                    if (obj != null && msgId(obj) == id) return obj;
+                                }
+                            }
+                        }
+                    }
+                }
+                Field fs = findField(smh.getClass(), "sendingMessages");
+                if (fs != null) {
+                    Object sm = fs.get(smh);
+                    if (sm instanceof Map) {
+                        for (Object e0 : ((Map<?, ?>) sm).entrySet()) {
+                            Object msg = ((Map.Entry<?, ?>) e0).getValue();
+                            if (msg != null && msgId(msg) == id) return msg;
+                        }
+                    } else if (sm instanceof android.util.SparseArray) {
+                        android.util.SparseArray<?> sa = (android.util.SparseArray<?>) sm;
+                        for (int i = 0; i < sa.size(); i++) {
+                            Object msg = sa.valueAt(i);
+                            if (msg != null && msgId(msg) == id) return msg;
+                        }
+                    }
+                }
+                Field fu = findField(smh.getClass(), "unsentMessages");
+                if (fu != null) {
+                    Object sm = fu.get(smh);
+                    if (sm instanceof android.util.SparseArray) {
+                        android.util.SparseArray<?> sa = (android.util.SparseArray<?>) sm;
+                        for (int i = 0; i < sa.size(); i++) {
+                            Object msg = sa.valueAt(i);
+                            if (msg != null && msgId(msg) == id) return msg;
+                        }
+                    }
+                }
+            } catch (Throwable t) {}
+        }
+        return null;
+    }
+
+    private static void showPauseDialogJava(final Object moParam, final long id, final boolean inDelay, final int account) {
         if (mainHandler == null) mainHandler = new Handler(android.os.Looper.getMainLooper());
         mainHandler.post(new Runnable() {
             @Override
             public void run() {
                 try {
-                    // Find mo to determine title
-                    Object mo = null;
-                    for (int a = 0; a < 4; a++) {
-                        Object smh = getSmh(a);
-                        if (smh == null) continue;
-                        try {
-                            Field f = findField(smh.getClass(), "delayedMessages");
-                            if (f == null) continue;
-                            Object map = f.get(smh);
-                            if (!(map instanceof Map)) continue;
-                            for (Object e0 : ((Map<?, ?>) map).entrySet()) {
-                                Object v = ((Map.Entry<?, ?>) e0).getValue();
-                                if (!(v instanceof ArrayList)) continue;
-                                for (Object cand : (ArrayList<?>) v) {
-                                    Object obj = gf(cand, "obj");
-                                    if (obj != null && msgId(obj) == id) {
-                                        mo = obj;
-                                        break;
-                                    }
-                                }
-                                if (mo != null) break;
-                            }
-                            if (mo != null) break;
-                        } catch (Throwable t) {}
-                    }
-                    if (mo == null) {
-                        // Check sendingMessages
-                        for (int a = 0; a < 4; a++) {
-                            Object smh = getSmh(a);
-                            if (smh == null) continue;
-                            try {
-                                Field fs = findField(smh.getClass(), "sendingMessages");
-                                if (fs != null) {
-                                    Object sm = fs.get(smh);
-                                    if (sm instanceof Map) {
-                                        for (Object e0 : ((Map<?, ?>) sm).entrySet()) {
-                                            Object msg = ((Map.Entry<?, ?>) e0).getValue();
-                                            if (msg != null && msgId(msg) == id) {
-                                                mo = msg;
-                                                break;
-                                            }
-                                        }
-                                        if (mo != null) break;
-                                    }
-                                }
-                            } catch (Throwable t) {}
-                        }
-                    }
+                    Object mo = moParam != null ? moParam : findMo(id);
                     android.app.Activity activity = findTopChatActivity(account);
                     if (activity == null) {
                         log("showPauseDialogJava: no activity");
@@ -114,24 +119,28 @@ public class Main {
                     } else {
                         title = "Сообщение";
                     }
+                    final Object finalMo = mo;
                     final String[] items = new String[]{"Отменить", "Сохранить", "Пауза", "Отправить"};
                     showCustomActionDialog(activity, title, items, new ActionDialogCallback() {
                         @Override
                         public void onChoice(String choice) {
                             if (choice.equals("Отменить")) {
-                                standardCancel(id, false);
+                                standardCancel(finalMo, id, false);
                             } else if (choice.equals("Сохранить")) {
-                                standardCancel(id, true);
+                                standardCancel(finalMo, id, true);
                             } else if (choice.equals("Пауза")) {
-                                setPause(id);
+                                if (finalMo != null) setPause(finalMo, id);
+                                else setPause(id);
                             } else if (choice.equals("Отправить")) {
-                                resumeAfterDialog(id, true);
+                                if (finalMo != null) resumeAfterDialog(finalMo, id, true);
+                                else resumeAfterDialog(id, true);
                             }
                         }
 
                         @Override
                         public void onDismissedWithoutChoice() {
-                            resumeAfterDialog(id, inDelay);
+                            if (finalMo != null) resumeAfterDialog(finalMo, id, inDelay);
+                            else resumeAfterDialog(id, inDelay);
                         }
                     });
                 } catch (Throwable t) {
@@ -141,59 +150,13 @@ public class Main {
         });
     }
 
-    private static void showPauseDialogPausedJava(final long id, final int account) {
+    private static void showPauseDialogPausedJava(final Object moParam, final long id, final int account) {
         if (mainHandler == null) mainHandler = new Handler(android.os.Looper.getMainLooper());
         mainHandler.post(new Runnable() {
             @Override
             public void run() {
                 try {
-                    // Find mo to determine title
-                    Object mo = null;
-                    for (int a = 0; a < 4; a++) {
-                        Object smh = getSmh(a);
-                        if (smh == null) continue;
-                        try {
-                            Field f = findField(smh.getClass(), "delayedMessages");
-                            if (f == null) continue;
-                            Object map = f.get(smh);
-                            if (!(map instanceof Map)) continue;
-                            for (Object e0 : ((Map<?, ?>) map).entrySet()) {
-                                Object v = ((Map.Entry<?, ?>) e0).getValue();
-                                if (!(v instanceof ArrayList)) continue;
-                                for (Object cand : (ArrayList<?>) v) {
-                                    Object obj = gf(cand, "obj");
-                                    if (obj != null && msgId(obj) == id) {
-                                        mo = obj;
-                                        break;
-                                    }
-                                }
-                                if (mo != null) break;
-                            }
-                            if (mo != null) break;
-                        } catch (Throwable t) {}
-                    }
-                    if (mo == null) {
-                        for (int a = 0; a < 4; a++) {
-                            Object smh = getSmh(a);
-                            if (smh == null) continue;
-                            try {
-                                Field fs = findField(smh.getClass(), "sendingMessages");
-                                if (fs != null) {
-                                    Object sm = fs.get(smh);
-                                    if (sm instanceof Map) {
-                                        for (Object e0 : ((Map<?, ?>) sm).entrySet()) {
-                                            Object msg = ((Map.Entry<?, ?>) e0).getValue();
-                                            if (msg != null && msgId(msg) == id) {
-                                                mo = msg;
-                                                break;
-                                            }
-                                        }
-                                        if (mo != null) break;
-                                    }
-                                }
-                            } catch (Throwable t) {}
-                        }
-                    }
+                    Object mo = moParam != null ? moParam : findMo(id);
                     android.app.Activity activity = findTopChatActivity(account);
                     if (activity == null) {
                         log("showPauseDialogPausedJava: no activity");
@@ -208,24 +171,28 @@ public class Main {
                     } else {
                         title = "Сообщение (на паузе)";
                     }
+                    final Object finalMo = mo;
                     final String[] items = new String[]{"Отменить", "Сохранить", "Продолжить", "Отправить"};
                     showCustomActionDialog(activity, title, items, new ActionDialogCallback() {
                         @Override
                         public void onChoice(String choice) {
                             if (choice.equals("Отменить")) {
-                                standardCancel(id, false);
+                                standardCancel(finalMo, id, false);
                             } else if (choice.equals("Сохранить")) {
-                                standardCancel(id, true);
+                                standardCancel(finalMo, id, true);
                             } else if (choice.equals("Продолжить")) {
-                                resumeAfterDialog(id, false);
+                                if (finalMo != null) resumeAfterDialog(finalMo, id, false);
+                                else resumeAfterDialog(id, false);
                             } else if (choice.equals("Отправить")) {
-                                resumeAfterDialog(id, true);
+                                if (finalMo != null) resumeAfterDialog(finalMo, id, true);
+                                else resumeAfterDialog(id, true);
                             }
                         }
 
                         @Override
                         public void onDismissedWithoutChoice() {
-                            resumeAfterDialog(id, false);
+                            if (finalMo != null) resumeAfterDialog(finalMo, id, false);
+                            else resumeAfterDialog(id, false);
                         }
                     });
                 } catch (Throwable t) {
@@ -234,10 +201,6 @@ public class Main {
             }
         });
     }
-
-    // ============================================================
-    // custom (non-Telegram) action dialog
-    // ============================================================
 
     private interface ActionDialogCallback {
         void onChoice(String choice);
@@ -249,95 +212,57 @@ public class Main {
                                                  final String[] items,
                                                  final ActionDialogCallback callback) {
         try {
-            final android.content.Context ctx = activity;
-            final float density = ctx.getResources().getDisplayMetrics().density;
-
-            final android.app.Dialog dialog = new android.app.Dialog(ctx, android.R.style.Theme_Black_NoTitleBar);
-            dialog.requestWindowFeature(android.view.Window.FEATURE_NO_TITLE);
-
-            android.widget.LinearLayout root = new android.widget.LinearLayout(ctx);
-            root.setOrientation(android.widget.LinearLayout.VERTICAL);
-            int pad = (int) (20 * density);
-            root.setPadding(pad, pad, pad, pad);
-
-            android.graphics.drawable.GradientDrawable bg = new android.graphics.drawable.GradientDrawable();
-            bg.setColor(0xFF1E1E1E);
-            bg.setCornerRadius(14 * density);
-            root.setBackground(bg);
-
-            android.widget.TextView titleView = new android.widget.TextView(ctx);
-            titleView.setText(title);
-            titleView.setTextColor(0xFFFFFFFF);
-            titleView.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 17);
-            titleView.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
-            root.addView(titleView);
-
-            android.widget.TextView subtitleView = new android.widget.TextView(ctx);
-            subtitleView.setText("Выберите действие:");
-            subtitleView.setTextColor(0xFFAAAAAA);
-            subtitleView.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 14);
-            android.widget.LinearLayout.LayoutParams subtitleLp = new android.widget.LinearLayout.LayoutParams(
-                    android.widget.LinearLayout.LayoutParams.WRAP_CONTENT,
-                    android.widget.LinearLayout.LayoutParams.WRAP_CONTENT);
-            subtitleLp.topMargin = (int) (4 * density);
-            subtitleLp.bottomMargin = (int) (14 * density);
-            root.addView(subtitleView, subtitleLp);
-
             final boolean[] choiceMade = {false};
+            Class<?> builderCls = Class.forName("org.telegram.ui.ActionBar.AlertDialog$Builder");
+            Constructor<?> ctor = builderCls.getConstructor(android.content.Context.class);
+            final Object builder = ctor.newInstance(activity);
 
-            for (final String item : items) {
-                android.widget.TextView btn = new android.widget.TextView(ctx);
-                btn.setText(item);
-                btn.setTextColor(0xFFFFFFFF);
-                btn.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 16);
-                int btnPadV = (int) (12 * density);
-                btn.setPadding(0, btnPadV, 0, btnPadV);
-                btn.setClickable(true);
-                btn.setFocusable(true);
+            Method mSetTitle = builderCls.getMethod("setTitle", CharSequence.class);
+            mSetTitle.invoke(builder, title);
 
-                android.graphics.drawable.GradientDrawable itemBg = new android.graphics.drawable.GradientDrawable();
-                itemBg.setColor(0x00000000);
-                itemBg.setCornerRadius(8 * density);
-                btn.setBackground(itemBg);
-
-                btn.setOnClickListener(new android.view.View.OnClickListener() {
-                    @Override
-                    public void onClick(android.view.View v) {
-                        choiceMade[0] = true;
-                        try { dialog.dismiss(); } catch (Throwable t) {}
-                        try { callback.onChoice(item); } catch (Throwable t) { log("showCustomActionDialog onChoice: " + t); }
-                    }
-                });
-
-                root.addView(btn, new android.widget.LinearLayout.LayoutParams(
-                        android.widget.LinearLayout.LayoutParams.MATCH_PARENT,
-                        android.widget.LinearLayout.LayoutParams.WRAP_CONTENT));
+            Method mSetSubtitle = findMethod(builderCls, "setSubtitle", new Class<?>[]{CharSequence.class});
+            if (mSetSubtitle != null) {
+                mSetSubtitle.invoke(builder, "Выберите действие:");
             }
 
-            dialog.setContentView(root);
-            dialog.setCancelable(true);
-            dialog.setCanceledOnTouchOutside(true);
-            dialog.setOnDismissListener(new android.content.DialogInterface.OnDismissListener() {
+            CharSequence[] charItems = new CharSequence[items.length];
+            for (int i = 0; i < items.length; i++) {
+                charItems[i] = items[i];
+            }
+
+            android.content.DialogInterface.OnClickListener clickListener = new android.content.DialogInterface.OnClickListener() {
                 @Override
-                public void onDismiss(android.content.DialogInterface d) {
+                public void onClick(android.content.DialogInterface dialog, int which) {
+                    if (which >= 0 && which < items.length) {
+                        choiceMade[0] = true;
+                        try {
+                            Method mDismiss = dialog.getClass().getMethod("dismiss");
+                            mDismiss.invoke(dialog);
+                        } catch (Throwable t) {}
+                        try { callback.onChoice(items[which]); } catch (Throwable t) { log("onChoice: " + t); }
+                    }
+                }
+            };
+
+            Method mSetItems = builderCls.getMethod("setItems", CharSequence[].class, android.content.DialogInterface.OnClickListener.class);
+            mSetItems.invoke(builder, charItems, clickListener);
+
+            android.content.DialogInterface.OnDismissListener dismissListener = new android.content.DialogInterface.OnDismissListener() {
+                @Override
+                public void onDismiss(android.content.DialogInterface dialog) {
                     if (!choiceMade[0]) {
                         try { callback.onDismissedWithoutChoice(); } catch (Throwable t) {
-                            log("showCustomActionDialog onDismissedWithoutChoice: " + t);
+                            log("onDismissedWithoutChoice: " + t);
                         }
                     }
                 }
-            });
+            };
 
-            android.view.Window window = dialog.getWindow();
-            if (window != null) {
-                window.setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(android.graphics.Color.TRANSPARENT));
-                android.view.WindowManager.LayoutParams lp = window.getAttributes();
-                lp.width = (int) (300 * density);
-                lp.height = android.view.WindowManager.LayoutParams.WRAP_CONTENT;
-                window.setAttributes(lp);
-            }
+            Method mSetOnDismiss = builderCls.getMethod("setOnDismissListener", android.content.DialogInterface.OnDismissListener.class);
+            mSetOnDismiss.invoke(builder, dismissListener);
 
-            dialog.show();
+            Method mShow = builderCls.getMethod("show");
+            mShow.invoke(builder);
         } catch (Throwable t) {
             log("showCustomActionDialog: " + t);
             if (callback != null) {
@@ -595,50 +520,56 @@ public class Main {
     private static void hookChatActivityTracking() {
         try {
             Class<?> chatActivityClass = Class.forName("org.telegram.ui.ChatActivity");
-            // Hook onResume
             Method onResume = findDeclared(chatActivityClass, "onResume", new Class<?>[0]);
             if (onResume != null) {
                 XC_MethodHook.Unhook h = XposedBridge.hookMethod(onResume, new XC_MethodHook() {
                     @Override
                     public void beforeHookedMethod(MethodHookParam param) {
                         try {
-                            Object activity = param.thisObject;
-                            if (activity == null) return;
+                            Object fragment = param.thisObject;
+                            if (fragment == null) return;
                             int acc = 0;
-                            Method getAccount = findMethod(activity.getClass(), "getCurrentAccount", new Class<?>[0]);
+                            Method getAccount = findMethod(fragment.getClass(), "getCurrentAccount", new Class<?>[0]);
                             if (getAccount != null) {
-                                Object accObj = getAccount.invoke(activity);
+                                Object accObj = getAccount.invoke(fragment);
                                 if (accObj instanceof Integer) acc = (Integer) accObj;
                             }
-                            synchronized (chatActivityMap) {
-                                chatActivityMap.put(acc, (android.app.Activity) activity);
+                            Method getParent = findMethod(fragment.getClass(), "getParentActivity", new Class<?>[0]);
+                            android.app.Activity act = null;
+                            if (getParent != null) {
+                                Object a = getParent.invoke(fragment);
+                                if (a instanceof android.app.Activity) act = (android.app.Activity) a;
                             }
-                            log("ChatActivity onResume: acc=" + acc);
+                            if (act == null) {
+                                act = findTopChatActivity(acc);
+                            }
+                            if (act != null) {
+                                synchronized (chatActivityMap) {
+                                    chatActivityMap.put(acc, act);
+                                }
+                            }
+                            log("ChatActivity onResume: acc=" + acc + " act=" + act);
                         } catch (Throwable t) {}
                     }
                 });
                 if (h != null) hooks.add(h);
             }
-            // Hook onPause
             Method onPause = findDeclared(chatActivityClass, "onPause", new Class<?>[0]);
             if (onPause != null) {
                 XC_MethodHook.Unhook h = XposedBridge.hookMethod(onPause, new XC_MethodHook() {
                     @Override
                     public void beforeHookedMethod(MethodHookParam param) {
                         try {
-                            Object activity = param.thisObject;
-                            if (activity == null) return;
+                            Object fragment = param.thisObject;
+                            if (fragment == null) return;
                             int acc = 0;
-                            Method getAccount = findMethod(activity.getClass(), "getCurrentAccount", new Class<?>[0]);
+                            Method getAccount = findMethod(fragment.getClass(), "getCurrentAccount", new Class<?>[0]);
                             if (getAccount != null) {
-                                Object accObj = getAccount.invoke(activity);
+                                Object accObj = getAccount.invoke(fragment);
                                 if (accObj instanceof Integer) acc = (Integer) accObj;
                             }
                             synchronized (chatActivityMap) {
-                                android.app.Activity stored = chatActivityMap.get(acc);
-                                if (stored == activity) {
-                                    chatActivityMap.remove(acc);
-                                }
+                                chatActivityMap.remove(acc);
                             }
                         } catch (Throwable t) {}
                     }
@@ -646,111 +577,25 @@ public class Main {
                 if (h != null) hooks.add(h);
             }
             log("hookChatActivityTracking: installed");
-            // Scan existing activities for already-resumed ChatActivity
-            scanExistingChatActivities();
         } catch (Throwable t) {
             log("hookChatActivityTracking: " + t);
         }
     }
 
-    private static void scanExistingChatActivities() {
-        try {
-            log("scanExistingChatActivities: start");
-            Class<?> activityThreadClass = Class.forName("android.app.ActivityThread");
-            Method currentThread = activityThreadClass.getDeclaredMethod("currentActivityThread");
-            currentThread.setAccessible(true);
-            Object thread = currentThread.invoke(null);
-            if (thread == null) {
-                log("scanExistingChatActivities: thread=null");
-                return;
-            }
-            Field activitiesField = activityThreadClass.getDeclaredField("mActivities");
-            activitiesField.setAccessible(true);
-            Object activitiesObj = activitiesField.get(thread);
-            if (activitiesObj instanceof Map) {
-                Map<?, ?> activities = (Map<?, ?>) activitiesObj;
-                log("scanExistingChatActivities: activities size=" + activities.size());
-                for (Object record : activities.values()) {
-                    try {
-                        Field activityField = record.getClass().getDeclaredField("activity");
-                        activityField.setAccessible(true);
-                        Object activity = activityField.get(record);
-                        if (activity instanceof android.app.Activity) {
-                            String className = activity.getClass().getName();
-                            log("scanExistingChatActivities: Activity class=" + className);
-                            // Store LaunchActivity (main activity in single-activity arch)
-                            if (className.contains("LaunchActivity")) {
-                                int acc = 0;
-                                Method getAccount = findMethod(activity.getClass(), "getCurrentAccount", new Class<?>[0]);
-                                if (getAccount != null) {
-                                    Object accObj = getAccount.invoke(activity);
-                                    if (accObj instanceof Integer) acc = (Integer) accObj;
-                                }
-                                synchronized (chatActivityMap) {
-                                    chatActivityMap.put(acc, (android.app.Activity) activity);
-                                }
-                                log("scanExistingChatActivities: stored LaunchActivity acc=" + acc);
-                            }
-                        }
-                    } catch (Throwable t) {}
-                }
-            } else {
-                log("scanExistingChatActivities: activities not Map, class=" + (activitiesObj == null ? "null" : activitiesObj.getClass().getName()));
-            }
-        } catch (Throwable t) {
-            log("scanExistingChatActivities: " + t);
-        }
-    }
-
     private static android.app.Activity findTopChatActivity(int account) {
-        // Try map first
         android.app.Activity act = getChatActivity(account);
-        if (act != null) return act;
-        // Scan ActivityThread on-demand — return any visible Activity (LaunchActivity works)
+        if (act != null && !act.isFinishing()) return act;
         try {
-            Class<?> activityThreadClass = Class.forName("android.app.ActivityThread");
-            Method currentThread = activityThreadClass.getDeclaredMethod("currentActivityThread");
-            currentThread.setAccessible(true);
-            Object thread = currentThread.invoke(null);
-            if (thread == null) return null;
-            Field activitiesField = activityThreadClass.getDeclaredField("mActivities");
-            activitiesField.setAccessible(true);
-            Object activitiesObj = activitiesField.get(thread);
-            if (activitiesObj instanceof Map) {
-                Map<?, ?> activities = (Map<?, ?>) activitiesObj;
-                // Prefer LaunchActivity (main activity in single-activity arch)
-                android.app.Activity launchActivity = null;
-                for (Object record : activities.values()) {
-                    try {
-                        Field activityField = record.getClass().getDeclaredField("activity");
-                        activityField.setAccessible(true);
-                        Object activity = activityField.get(record);
-                        if (activity instanceof android.app.Activity) {
-                            String className = activity.getClass().getName();
-                            if (className.contains("LaunchActivity")) {
-                                synchronized (chatActivityMap) {
-                                    chatActivityMap.put(account, (android.app.Activity) activity);
-                                }
-                                log("findTopChatActivity: found LaunchActivity");
-                                return (android.app.Activity) activity;
-                            }
-                            if (launchActivity == null) {
-                                launchActivity = (android.app.Activity) activity;
-                            }
-                        }
-                    } catch (Throwable t) {}
+            Class<?> la = Class.forName("org.telegram.ui.LaunchActivity");
+            Field f = la.getField("instance");
+            Object inst = f.get(null);
+            if (inst instanceof android.app.Activity && !((android.app.Activity) inst).isFinishing()) {
+                synchronized (chatActivityMap) {
+                    chatActivityMap.put(account, (android.app.Activity) inst);
                 }
-                if (launchActivity != null) {
-                    synchronized (chatActivityMap) {
-                        chatActivityMap.put(account, launchActivity);
-                    }
-                    log("findTopChatActivity: using fallback Activity " + launchActivity.getClass().getName());
-                    return launchActivity;
-                }
+                return (android.app.Activity) inst;
             }
-        } catch (Throwable t) {
-            log("findTopChatActivity: " + t);
-        }
+        } catch (Throwable t) {}
         return null;
     }
 
@@ -868,57 +713,40 @@ public class Main {
             return; // allow original cancelSendingMessage for this specific id
         }
         if (!isPausable(mo)) {
-            // Не голос/кружок/видео — не наш случай, отдаём управление
-            // оригинальному cancelSendingMessage (не трогаем param.result).
             log("cancel skip (not pausable) id=" + id);
             return;
         }
-        log("cancel fired id=" + id + " sending=" + boolOf(mo, "isSending")
-                + " voice=" + boolOf(mo, "isVoice")
+        log("cancel fired id=" + id + " voice=" + boolOf(mo, "isVoice")
                 + " round=" + boolOf(mo, "isRoundVideo")
-                + " video=" + boolOf(mo, "isVideo")
                 + " out=" + boolOf(mo, "isOut"));
-        // Check if already paused
+
+        // Always prevent host's original immediate deletion of the message
+        param.setResult(null);
+
         boolean alreadyPaused;
         synchronized (pausedIds) {
             alreadyPaused = pausedIds.contains(id);
         }
-        // Check if in delay phase. Note: we deliberately do NOT remove the job from
-        // `deferred` here. If we removed it and the user then picks "Пауза" in the
-        // dialog, the DelayJob (which holds the only reference to the FileLoader
-        // self/args needed to resume the *original* uploadFile call) would be lost
-        // forever - later "resume" would fall back to sendMessage/retrySendMessage,
-        // which is not equivalent. Leaving the job in `deferred` lets fireDeferred()
-        // (called explicitly on resume, or from the original scheduled timer) decide
-        // what to do, and fireDeferred() now checks pausedIds before firing.
         boolean inDelay;
         synchronized (deferred) {
             inDelay = deferred.containsKey(id);
         }
         if (inDelay) {
             log("cancel during delay id=" + id);
-            if (isPausable(mo)) {
-                showPauseDialogJava(id, true, accountOf(mo));
-            }
-            param.setResult(null);
+            showPauseDialogJava(mo, id, true, accountOf(mo));
             return;
         }
         if (alreadyPaused) {
             log("cancel on paused id=" + id);
-            showPauseDialogPausedJava(id, accountOf(mo));
-            param.setResult(null);
+            showPauseDialogPausedJava(mo, id, accountOf(mo));
             return;
         }
-        // Normal sending - cancel upload and remove from delayedMessages
-        cancelUploadAndRemoveFromDelayed(mo, id);
-        // Show dialog with 4 options ONLY for pausable messages
-        if (isPausable(mo)) {
-            showPauseDialogJava(id, false, accountOf(mo));
-        }
-        param.setResult(null);
+        // Normal sending - cancel current upload so it doesn't leak into network while dialog is up
+        cancelUploadOnly(mo, id);
+        showPauseDialogJava(mo, id, false, accountOf(mo));
     }
 
-    private static void cancelUploadAndRemoveFromDelayed(Object mo, long id) {
+    private static void cancelUploadOnly(Object mo, long id) {
         try {
             int acc = accountOf(mo);
             Object smh = getSmh(acc);
@@ -933,13 +761,10 @@ public class Main {
                 Object v = e.getValue();
                 if (!(v instanceof ArrayList)) continue;
                 ArrayList<?> list = (ArrayList<?>) v;
-                for (int i = list.size() - 1; i >= 0; i--) {
+                for (int i = 0; i < list.size(); i++) {
                     Object cand = list.get(i);
                     Object obj = gf(cand, "obj");
-                    if (obj == null) continue;
-                    if (gf(cand, "messageObjects") != null) continue;
-                    if (msgId(obj) != id) continue;
-                    // Cancel uploads in delayedMessage
+                    if (obj == null || msgId(obj) != id) continue;
                     Object uploads = gf(cand, "uploads");
                     if (uploads instanceof Map) {
                         for (Object op : ((Map<?, ?>) uploads).values()) {
@@ -949,7 +774,6 @@ public class Main {
                             } catch (Throwable t) {}
                         }
                     }
-                    // Cancel file upload
                     Object key = e.getKey();
                     if (key instanceof String) {
                         String loc = (String) key;
@@ -959,38 +783,72 @@ public class Main {
                             if (cm != null) cm.invoke(fl, loc, Boolean.FALSE);
                         }
                     }
-                    list.remove(i);
-                    if (list.isEmpty()) {
-                        try { m.remove(key); } catch (Throwable t) {}
-                    }
                     break;
                 }
             }
         } catch (Throwable t) {
-            log("cancelUploadAndRemoveFromDelayed: " + t);
+            log("cancelUploadOnly: " + t);
         }
     }
 
     private static void standardCancel(Object mo, long id, boolean save) {
         try {
             bypassCancelIds.add(id);
-            // Bug fix: this id must never linger in pausedIds/deferred after a real
-            // cancel/save, otherwise it leaks forever (pausedIds) or can wrongly
-            // auto-fire later (deferred) for what the user just canceled.
             boolean wasPaused;
             synchronized (pausedIds) { wasPaused = pausedIds.remove(id); }
             if (wasPaused) persistPaused();
             synchronized (deferred) { deferred.remove(id); }
-            if (save) {
+            if (save && mo != null) {
                 saveToDownloads(mo);
             }
-            // Call original cancelSendingMessage
-            Object smh = getSmh(accountOf(mo));
-            if (smh != null) {
-                Method m = findMethod(smh.getClass(), "cancelSendingMessage", new Class<?>[]{moClass});
-                if (m != null) m.invoke(smh, mo);
+            int acc = mo != null ? accountOf(mo) : 0;
+            Object smh = getSmh(acc);
+            boolean cancelled = false;
+            if (smh != null && mo != null) {
+                Method m = findMethod(smh.getClass(), "cancelSendingMessage", new Class<?>[]{moClass != null ? moClass : mo.getClass()});
+                if (m != null) {
+                    try {
+                        m.invoke(smh, mo);
+                        cancelled = true;
+                    } catch (Throwable t) {
+                        log("standardCancel invoke error: " + t);
+                    }
+                }
+                if (!cancelled) {
+                    Method mList = findMethod(smh.getClass(), "cancelSendingMessage", new Class<?>[]{ArrayList.class});
+                    if (mList != null) {
+                        ArrayList<Object> list = new ArrayList<Object>();
+                        list.add(mo);
+                        try {
+                            mList.invoke(smh, list);
+                            cancelled = true;
+                        } catch (Throwable t) {}
+                    }
+                }
             }
-            log("standardCancel: id=" + id + " save=" + save);
+            if (!cancelled) {
+                Object mc = callGetInstance("org.telegram.messenger.MessagesController", acc);
+                if (mc != null) {
+                    ArrayList<Integer> ids = new ArrayList<Integer>();
+                    ids.add(Integer.valueOf((int) id));
+                    for (Method mDel : mc.getClass().getDeclaredMethods()) {
+                        if ("deleteMessages".equals(mDel.getName())) {
+                            Class<?>[] pt = mDel.getParameterTypes();
+                            if (pt.length >= 1 && pt[0] == ArrayList.class) {
+                                Object[] args = new Object[pt.length];
+                                args[0] = ids;
+                                try {
+                                    mDel.invoke(mc, args);
+                                    cancelled = true;
+                                    log("standardCancel: deleted via MessagesController");
+                                    break;
+                                } catch (Throwable tDel) {}
+                            }
+                        }
+                    }
+                }
+            }
+            log("standardCancel done: id=" + id + " save=" + save + " cancelled=" + cancelled);
         } catch (Throwable t) {
             log("standardCancel: " + t);
         } finally {
@@ -999,49 +857,8 @@ public class Main {
     }
 
     private static void standardCancel(long id, boolean save) {
-        // Find mo by id
-        for (int a = 0; a < 4; a++) {
-            Object smh = getSmh(a);
-            if (smh == null) continue;
-            try {
-                Field f = findField(smh.getClass(), "delayedMessages");
-                if (f == null) continue;
-                Object map = f.get(smh);
-                if (!(map instanceof Map)) continue;
-                for (Object e0 : ((Map<?, ?>) map).entrySet()) {
-                    Object v = ((Map.Entry<?, ?>) e0).getValue();
-                    if (!(v instanceof ArrayList)) continue;
-                    for (Object cand : (ArrayList<?>) v) {
-                        Object obj = gf(cand, "obj");
-                        if (obj != null && msgId(obj) == id) {
-                            standardCancel(obj, id, save);
-                            return;
-                        }
-                    }
-                }
-                // Check sendingMessages
-                Field fs = findField(smh.getClass(), "sendingMessages");
-                if (fs != null) {
-                    Object sm = fs.get(smh);
-                    if (sm instanceof Map) {
-                        for (Object e0 : ((Map<?, ?>) sm).entrySet()) {
-                            Object msg = ((Map.Entry<?, ?>) e0).getValue();
-                            if (msg != null && msgId(msg) == id) {
-                                standardCancel(msg, id, save);
-                                return;
-                            }
-                        }
-                    }
-                }
-            } catch (Throwable t) {}
-        }
-        // Message object could not be located - still clear any lingering pause/defer
-        // state for this id so it doesn't get stuck or fire unexpectedly later.
-        boolean wasPaused;
-        synchronized (pausedIds) { wasPaused = pausedIds.remove(id); }
-        if (wasPaused) persistPaused();
-        synchronized (deferred) { deferred.remove(id); }
-        log("standardCancel: id=" + id + " save=" + save + " (no mo)");
+        Object mo = findMo(id);
+        standardCancel(mo, id, save);
     }
 
     private static void setPause(Object mo, long id) {
@@ -1259,9 +1076,7 @@ public class Main {
             int hooked = 0;
             for (Method m : methods) {
                 String n = m.getName();
-                if (!"didPressButton".equals(n) && !"didPressedButton".equals(n)) continue;
-                Class<?>[] pt = m.getParameterTypes();
-                if (pt.length < 1 || pt.length > 2 || pt[0] != boolean.class) continue;
+                if (!"didPressButton".equals(n) && !"didPressedButton".equals(n) && !"didClickedImage".equals(n)) continue;
                 try { m.setAccessible(true); } catch (Throwable t) {}
                 try {
                     XC_MethodHook.Unhook h = XposedBridge.hookMethod(m, new XC_MethodHook() {
@@ -1280,16 +1095,6 @@ public class Main {
                                 if (wasPaused) {
                                     persistPaused();
                                     log("tap resume id=" + id);
-                                    // If the message was paused while still in the pre-send
-                                    // delay queue, its DelayJob is still sitting in `deferred`
-                                    // (see handleCancel/fireDeferred). Resuming from a pause
-                                    // should behave like a fresh send: re-arm the delay timer
-                                    // (requeueDeferredIfQueued) instead of firing immediately,
-                                    // so the user gets another window to press the X. Only
-                                    // fall back to resume()'s sendMessage/retrySendMessage path
-                                    // if the job already left `deferred` (i.e. it was paused
-                                    // after the upload had already started - a "late" pause,
-                                    // which has no upload phase left to delay).
                                     boolean firedFromQueue = requeueDeferredIfQueued(id);
                                     if (!firedFromQueue) {
                                         resume(mo);
@@ -1303,6 +1108,56 @@ public class Main {
                     if (h != null) { hooks.add(h); hooked++; }
                 } catch (Throwable t2) {}
             }
+
+            // Direct onTouchEvent hook for reliable radial progress button taps
+            Method onTouch = findDeclared(cls, "onTouchEvent", new Class<?>[]{android.view.MotionEvent.class});
+            if (onTouch != null) {
+                XC_MethodHook.Unhook hTouch = XposedBridge.hookMethod(onTouch, new XC_MethodHook() {
+                    @Override
+                    public void beforeHookedMethod(MethodHookParam param) {
+                        try {
+                            if (!enabled) return;
+                            android.view.MotionEvent ev = (android.view.MotionEvent) param.args[0];
+                            if (ev == null || ev.getAction() != android.view.MotionEvent.ACTION_UP) return;
+                            Object cell = param.thisObject;
+                            Object mo = getMessageObject(cell);
+                            if (mo == null) return;
+                            long id = msgId(mo);
+                            boolean paused;
+                            synchronized (pausedIds) {
+                                paused = pausedIds.contains(id);
+                            }
+                            if (!paused) return;
+
+                            Object rp = call0(cell, "getRadialProgress");
+                            if (rp != null) {
+                                Object rect = call0(rp, "getProgressRect");
+                                if (rect instanceof RectF) {
+                                    RectF r = (RectF) rect;
+                                    float x = ev.getX();
+                                    float y = ev.getY();
+                                    float pad = dp(14f);
+                                    if (x >= r.left - pad && x <= r.right + pad && y >= r.top - pad && y <= r.bottom + pad) {
+                                        synchronized (pausedIds) {
+                                            pausedIds.remove(id);
+                                        }
+                                        persistPaused();
+                                        log("onTouchEvent button hit -> resume id=" + id);
+                                        boolean firedFromQueue = requeueDeferredIfQueued(id);
+                                        if (!firedFromQueue) {
+                                            resume(mo);
+                                        }
+                                        param.setResult(Boolean.TRUE);
+                                        invalidateCell(cell);
+                                    }
+                                }
+                            }
+                        } catch (Throwable t) {}
+                    }
+                });
+                if (hTouch != null) { hooks.add(hTouch); hooked++; }
+            }
+
             log("hookCellTap: hooked " + hooked);
         } catch (Throwable t) {
             log("hookCellTap: " + t);
@@ -1854,11 +1709,60 @@ public class Main {
     }
 
     private static void resume(Object mo) {
+        if (mo == null) return;
         try {
-            Object smh = getSmh(accountOf(mo));
+            int acc = accountOf(mo);
+            Object smh = getSmh(acc);
             if (smh == null) { log("resume: no smh"); return; }
-            if (!invokeSend(smh, mo)) {
-                log("resume: no send method found");
+
+            // 1. retrySendMessage(MessageObject, boolean, long) - modern signature
+            Method mRetry3 = findMethod(smh.getClass(), "retrySendMessage", new Class<?>[]{moClass != null ? moClass : mo.getClass(), boolean.class, long.class});
+            if (mRetry3 != null) {
+                try {
+                    mRetry3.invoke(smh, mo, Boolean.FALSE, Long.valueOf(0L));
+                    log("resume: retrySendMessage(3 args) OK");
+                    postUpdate(mo);
+                    return;
+                } catch (Throwable t) {
+                    log("resume: retrySendMessage(3 args) err " + t);
+                }
+            }
+
+            // 2. retrySendMessage(MessageObject, boolean) - legacy signature
+            Method mRetry2 = findMethod(smh.getClass(), "retrySendMessage", new Class<?>[]{moClass != null ? moClass : mo.getClass(), boolean.class});
+            if (mRetry2 != null) {
+                try {
+                    mRetry2.invoke(smh, mo, Boolean.FALSE);
+                    log("resume: retrySendMessage(2 args) OK");
+                    postUpdate(mo);
+                    return;
+                } catch (Throwable t) {
+                    log("resume: retrySendMessage(2 args) err " + t);
+                }
+            }
+
+            // 3. SendMessagesHelper.SendMessageParams.of(mo) -> sendMessage(params)
+            try {
+                Class<?> paramsClass = Class.forName("org.telegram.messenger.SendMessagesHelper$SendMessageParams");
+                Method ofMethod = paramsClass.getMethod("of", moClass != null ? moClass : mo.getClass());
+                if (ofMethod != null) {
+                    Object paramsObj = ofMethod.invoke(null, mo);
+                    Method sendMethod = findMethod(smh.getClass(), "sendMessage", new Class<?>[]{paramsClass});
+                    if (sendMethod != null) {
+                        sendMethod.invoke(smh, paramsObj);
+                        log("resume: sendMessage(SendMessageParams) OK");
+                        postUpdate(mo);
+                        return;
+                    }
+                }
+            } catch (Throwable tParams) {}
+
+            // 4. Fallback search
+            if (invokeSend(smh, mo)) {
+                log("resume: invokeSend fallback OK");
+                postUpdate(mo);
+            } else {
+                log("resume: no send method succeeded");
             }
         } catch (Throwable t) {
             log("resume: " + t);
@@ -1885,7 +1789,7 @@ public class Main {
                 }
             } catch (Throwable t) {}
         }
-        for (int score = 0; score <= 5; score++) {
+        for (int score = 0; score <= 6; score++) {
             for (Method m : cands) {
                 if (scoreOf(m) != score) continue;
                 try {
@@ -1905,13 +1809,13 @@ public class Main {
         String n = m.getName();
         Class<?>[] pt = m.getParameterTypes();
         boolean moFirst = pt.length > 0 && pt[0].isAssignableFrom(moClass);
-        boolean canonical = pt.length == 2 && moFirst && pt[1] == boolean.class;
-        if ("retrySendMessage".equals(n) && canonical) return 0;
-        if ("retrySendMessage".equals(n) && pt.length == 1 && moFirst) return 1;
-        if ("sendMessage".equals(n) && pt.length == 1 && moFirst) return 2;
-        if ("sendMessage".equals(n) && pt.length == 1) return 3;
-        if ("retrySendMessage".equals(n)) return 4;
-        return 5;
+        if ("retrySendMessage".equals(n) && pt.length == 3 && moFirst) return 0;
+        if ("retrySendMessage".equals(n) && pt.length == 2 && moFirst && pt[1] == boolean.class) return 1;
+        if ("retrySendMessage".equals(n) && pt.length == 1 && moFirst) return 2;
+        if ("sendMessage".equals(n) && pt.length == 1 && moFirst) return 3;
+        if ("sendMessage".equals(n) && pt.length == 1) return 4;
+        if ("retrySendMessage".equals(n)) return 5;
+        return 6;
     }
 
     private static String paramTypeNames(Method m) {
@@ -1962,12 +1866,22 @@ public class Main {
     // overlay
     // ============================================================
 
-    private static int themeColor(String key, int fallback) {
+    private static int themeColor(int fallback) {
+        try {
+            Class<?> theme = Class.forName("org.telegram.ui.ActionBar.Theme");
+            Field f = findField(theme, "key_chat_outSendButton");
+            if (f != null) {
+                int key = f.getInt(null);
+                Method m = theme.getMethod("getColor", int.class);
+                Object r = m.invoke(null, Integer.valueOf(key));
+                if (r instanceof Integer) return ((Integer) r).intValue();
+            }
+        } catch (Throwable t) {}
         try {
             Class<?> theme = Class.forName("org.telegram.ui.ActionBar.Theme");
             Method m = theme.getMethod("getColor", String.class);
-            Object r = m.invoke(null, key);
-            if (r instanceof Integer) return (Integer) r;
+            Object r = m.invoke(null, "chat_outSendButton");
+            if (r instanceof Integer) return ((Integer) r).intValue();
         } catch (Throwable t) {}
         return fallback;
     }
@@ -1979,7 +1893,7 @@ public class Main {
             Object r = m.invoke(null, v);
             if (r instanceof Number) return ((Number) r).floatValue();
         } catch (Throwable t) {}
-        return v * 2f; // грубый fallback на случай отсутствия AndroidUtilities
+        return v * 2f;
     }
 
     private static void drawOverlay(Object cell, Canvas canvas) {
@@ -1992,39 +1906,46 @@ public class Main {
         if (r.width() <= 0f || r.height() <= 0f) return;
         float cx = r.centerX();
         float cy = r.centerY();
-        // небольшой отступ, чтобы кружок не вылезал за штатный radial progress
         float inset = dp(1.5f);
         float rad = Math.max(0f, Math.min(r.width(), r.height()) / 2f - inset);
         if (rad <= 0f) return;
 
-        // Цвет берём из темы приложения, чтобы кружок совпадал с акцентом
-        // (send/voice button), а не был плоской чёрной заглушкой.
-        int accent = themeColor("chat_outSendButton", 0xFF3E9BE0);
-        int fillColor = (accent & 0x00FFFFFF) | 0xCC000000; // тот же тон, ~80% альфа
+        // Fully opaque background circle matching theme accent
+        int accent = themeColor(0xFF3E9BE0);
+        int fillColor = 0xFF000000 | (accent & 0x00FFFFFF);
 
         Paint fill = new Paint(Paint.ANTI_ALIAS_FLAG);
         fill.setStyle(Paint.Style.FILL);
         fill.setColor(fillColor);
         canvas.drawCircle(cx, cy, rad, fill);
 
-        // тонкая обводка поверх — как у штатного radial progress ринга
+        // Thin stroke matching Telegram's radial progress border
         Paint stroke = new Paint(Paint.ANTI_ALIAS_FLAG);
         stroke.setStyle(Paint.Style.STROKE);
         stroke.setStrokeWidth(dp(1.5f));
-        stroke.setColor(0x33FFFFFF);
+        stroke.setColor(0x40FFFFFF);
         canvas.drawCircle(cx, cy, rad - stroke.getStrokeWidth() / 2f, stroke);
 
-        // белый play-треугольник (иконка "продолжить")
-        float s = rad * 0.5f;
+        // Clean, rounded, optically-centered play triangle
+        Paint iconPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        iconPaint.setStyle(Paint.Style.FILL);
+        iconPaint.setColor(0xFFFFFFFF);
+        iconPaint.setPathEffect(new android.graphics.CornerPathEffect(dp(2.2f)));
+
+        float side = rad * 0.92f;
+        float h = (float) (side * Math.sqrt(3.0) / 2.0);
+        // Optical center: centroid of equilateral triangle is at 1/3 height
+        float left = cx - h / 3.0f + dp(0.75f);
+        float right = left + h;
+        float top = cy - side / 2.0f;
+        float bottom = cy + side / 2.0f;
+
         Path path = new Path();
-        path.moveTo(cx - s * 0.45f, cy - s);
-        path.lineTo(cx + s * 0.85f, cy);
-        path.lineTo(cx - s * 0.45f, cy + s);
+        path.moveTo(left, top);
+        path.lineTo(right, cy);
+        path.lineTo(left, bottom);
         path.close();
-        Paint icon = new Paint(Paint.ANTI_ALIAS_FLAG);
-        icon.setStyle(Paint.Style.FILL);
-        icon.setColor(0xFFFFFFFF);
-        canvas.drawPath(path, icon);
+        canvas.drawPath(path, iconPaint);
     }
 
     private static void invalidateCell(Object cell) {
@@ -2078,15 +1999,29 @@ public class Main {
     }
 
     private static boolean isPausable(Object mo) {
-        // Только голосовые (ГС) и видео-сообщения кружком (ВС) — не обычное видео/фото/файлы.
-        if (!boolOf(mo, "isVoice") && !boolOf(mo, "isRoundVideo")) return false;
-        if (boolOf(mo, "isSending")) return true;
+        if (mo == null) return false;
+        // Outgoing message check
+        if (!boolOf(mo, "isOut") && !boolOf(mo, "isOutOwner")) return false;
+        // Direct voice or round video check
+        if (boolOf(mo, "isVoice") || boolOf(mo, "isRoundVideo")) return true;
+        // Fallback by MessageObject.type
+        try {
+            Field tf = findField(mo.getClass(), "type");
+            if (tf != null) {
+                int type = tf.getInt(mo);
+                if (type == 2 || type == 5) return true;
+            }
+        } catch (Throwable t) {}
+        // Fallback by messageOwner
         Object owner = gf(mo, "messageOwner");
-        if (owner == null) return false;
-        int st = intField(owner, "send_state");
-        if (st == 2) {
-            log("cancel: media with send_state=ERROR -> hold");
-            return true;
+        if (owner != null) {
+            try {
+                Class<?> moCls = moClass != null ? moClass : mo.getClass();
+                Method mVoice = findMethod(moCls, "isVoiceMessage", new Class<?>[]{owner.getClass()});
+                if (mVoice != null && Boolean.TRUE.equals(mVoice.invoke(null, owner))) return true;
+                Method mRound = findMethod(moCls, "isRoundVideoMessage", new Class<?>[]{owner.getClass()});
+                if (mRound != null && Boolean.TRUE.equals(mRound.invoke(null, owner))) return true;
+            } catch (Throwable t) {}
         }
         return false;
     }
